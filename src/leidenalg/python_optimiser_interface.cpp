@@ -495,6 +495,66 @@ extern "C"
     return PyFloat_FromDouble(q);
   }
 
+  PyObject* _Optimiser_snapshot_partition(PyObject *self, PyObject *args, PyObject *keywds)
+  {
+    PyObject* py_partition = NULL;
+
+    static const char* kwlist[] = {"partition", NULL};
+
+    if (!PyArg_ParseTupleAndKeywords(args, keywds, "O", (char**) kwlist,
+                                     &py_partition))
+        return NULL;
+
+    MutableVertexPartition* partition = decapsule_MutableVertexPartition(py_partition);
+
+    size_t n = partition->get_graph()->vcount();
+    PyObject* py_membership = PyList_New(n);
+    if (py_membership == NULL)
+      return NULL;
+
+    for (size_t v = 0; v < n; v++)
+    {
+      PyObject* item = PyLong_FromSize_t(partition->membership(v));
+      if (item == NULL)
+      {
+        Py_DECREF(py_membership);
+        return NULL;
+      }
+      PyList_SetItem(py_membership, v, item);
+    }
+
+    PyObject* py_quality = NULL;
+    try
+    {
+      py_quality = PyFloat_FromDouble(partition->quality());
+    }
+    catch (std::exception& e)
+    {
+      Py_DECREF(py_membership);
+      PyErr_SetString(PyExc_RuntimeError, e.what());
+      return NULL;
+    }
+
+    if (py_quality == NULL)
+    {
+      Py_DECREF(py_membership);
+      return NULL;
+    }
+
+    PyObject* result = PyTuple_New(2);
+    if (result == NULL)
+    {
+      Py_DECREF(py_membership);
+      Py_DECREF(py_quality);
+      return NULL;
+    }
+
+    PyTuple_SetItem(result, 0, py_membership);
+    PyTuple_SetItem(result, 1, py_quality);
+
+    return result;
+  }
+
   PyObject* _Optimiser_set_consider_comms(PyObject *self, PyObject *args, PyObject *keywds)
   {
     PyObject* py_optimiser = NULL;

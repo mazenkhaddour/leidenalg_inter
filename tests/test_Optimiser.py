@@ -50,6 +50,23 @@ class OptimiserTest(unittest.TestCase):
         G.ecount(),
         msg="total_weight_in_all_comms not equal to ecount of graph.")
 
+  def test_move_nodes_history(self):
+    G = ig.Graph.Full(10)
+    partition = leidenalg.CPMVertexPartition(G, resolution_parameter=0.5)
+    diff, history = self.optimiser.move_nodes(
+      partition,
+      consider_comms=leidenalg.ALL_NEIGH_COMMS,
+      track_history=True,
+    )
+    self.assertEqual(len(history), 2)
+    self.assertEqual(history[0].iteration, 0)
+    self.assertEqual(history[0].delta, 0.0)
+    self.assertEqual(history[-1].delta, diff)
+    for idx, old, new in history[-1].moved_nodes:
+      self.assertEqual(history[0].membership[idx], old)
+      self.assertEqual(history[-1].membership[idx], new)
+    self.assertAlmostEqual(history[-1].quality, partition.quality())
+
   def test_merge_nodes_with_max_comm_size(self):
     G = ig.Graph.Full(100)
     partition = leidenalg.CPMVertexPartition(G, resolution_parameter=0.5)
@@ -102,6 +119,22 @@ class OptimiserTest(unittest.TestCase):
     self.assertListEqual(
         partition.sizes(), 10*[10],
         msg="After optimising partition (max_comm_size=10) failed to find different components with CPMVertexPartition(resolution_parameter=0.5)")
+
+  def test_optimise_partition_history(self):
+    G = ig.Graph.Famous('Zachary')
+    partition = leidenalg.CPMVertexPartition(G, resolution_parameter=0.1)
+    diff, history = self.optimiser.optimise_partition(
+      partition,
+      n_iterations=1,
+      track_history=True,
+    )
+    self.assertEqual(len(history), 2)
+    self.assertEqual(history[0].iteration, 0)
+    self.assertEqual(history[-1].delta, diff)
+    self.assertAlmostEqual(history[-1].quality, partition.quality())
+    for idx, old, new in history[-1].moved_nodes:
+      self.assertEqual(history[0].membership[idx], old)
+      self.assertEqual(history[-1].membership[idx], new)
 
   def test_optimiser_with_is_membership_fixed(self):
       G = ig.Graph.Full(3)

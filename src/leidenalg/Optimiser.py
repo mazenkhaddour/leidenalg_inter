@@ -3,6 +3,11 @@ from .VertexPartition import LinearResolutionParameterVertexPartition
 from collections import namedtuple
 from math import log, sqrt
 
+OptimisationHistoryEntry = namedtuple(
+  'OptimisationHistoryEntry',
+  ['iteration', 'membership', 'moved_nodes', 'quality', 'delta']
+)
+
 class Optimiser(object):
   r""" Class for doing community detection using the Leiden algorithm.
 
@@ -71,6 +76,20 @@ class Optimiser(object):
   def __init__(self):
     """ Create a new Optimiser object """
     self._optimiser = _c_leiden._new_Optimiser()
+
+  def _snapshot_partition(self, partition):
+    membership, quality = _c_leiden._Optimiser_snapshot_partition(partition._partition)
+    return tuple(membership), quality
+
+  @staticmethod
+  def _membership_changes(previous, current):
+    if previous is None:
+      return tuple()
+    return tuple(
+      (idx, prev, curr)
+      for idx, (prev, curr) in enumerate(zip(previous, current))
+      if prev != curr
+    )
 
   #########################################################3
   # consider_comms
@@ -249,7 +268,7 @@ class Optimiser(object):
     """
     _c_leiden._Optimiser_set_rng_seed(self._optimiser, value)
 
-  def optimise_partition(self, partition, n_iterations=2, is_membership_fixed=None):
+  def optimise_partition(self, partition, n_iterations=2, is_membership_fixed=None, track_history=False):
     """ Optimise the given partition.
 
     Parameters
@@ -267,10 +286,14 @@ class Optimiser(object):
       length of this list must be equal to the number of nodes. By default
       (None) all nodes can change community during the optimization.
 
+    track_history : bool
+      If :obj:`True`, also record intermediate optimisation states.
+
     Returns
     -------
-    float
-      Improvement in quality function.
+    float or (float, list[OptimisationHistoryEntry])
+      Improvement in quality function. When ``track_history`` is :obj:`True`,
+      a tuple containing the improvement and the recorded history is returned.
 
     Examples
     --------
@@ -290,6 +313,17 @@ class Optimiser(object):
 
     itr = 0
     diff = 0
+    history = [] if track_history else None
+    prev_membership = None
+    if track_history:
+      prev_membership, quality = self._snapshot_partition(partition)
+      history.append(OptimisationHistoryEntry(
+        iteration=itr,
+        membership=prev_membership,
+        moved_nodes=tuple(),
+        quality=quality,
+        delta=0.0,
+      ))
     continue_iteration = itr < n_iterations or n_iterations < 0
 
     if is_membership_fixed is not None:
@@ -304,12 +338,24 @@ class Optimiser(object):
               )
       diff += diff_inc
       itr += 1
+      if track_history:
+        membership, quality = self._snapshot_partition(partition)
+        history.append(OptimisationHistoryEntry(
+          iteration=itr,
+          membership=membership,
+          moved_nodes=self._membership_changes(prev_membership, membership),
+          quality=quality,
+          delta=diff_inc,
+        ))
+        prev_membership = membership
       if n_iterations < 0:
         continue_iteration = (diff_inc > 0)
       else:
         continue_iteration = itr < n_iterations
 
     partition._update_internal_membership()
+    if track_history:
+      return diff, history
     return diff
 
   def optimise_partition_multiplex(self, partitions, layer_weights=None, n_iterations=2, is_membership_fixed=None):
@@ -418,7 +464,7 @@ class Optimiser(object):
       partition._update_internal_membership()
     return diff
 
-  def move_nodes(self, partition, is_membership_fixed=None, consider_comms=None):
+  def move_nodes(self, partition, is_membership_fixed=None, consider_comms=None, track_history=False):
     """ Move nodes to alternative communities for *optimising* the partition.
 
     Parameters
@@ -435,10 +481,14 @@ class Optimiser(object):
       If ``None`` uses :attr:`consider_comms`, but can be set to
       something else.
 
+    track_history : bool
+      If :obj:`True`, also record snapshots before and after the move phase.
+
     Returns
     -------
-    float
-      Improvement in quality function.
+    float or (float, list[OptimisationHistoryEntry])
+      Improvement in quality function. When ``track_history`` is :obj:`True`,
+      a tuple containing the improvement and the recorded history is returned.
 
     Notes
     -----
@@ -463,12 +513,34 @@ class Optimiser(object):
     """
     if (consider_comms is None):
       consider_comms = self.consider_comms
+    history = [] if track_history else None
+    prev_membership = None
+    if track_history:
+      prev_membership, quality = self._snapshot_partition(partition)
+      history.append(OptimisationHistoryEntry(
+        iteration=0,
+        membership=prev_membership,
+        moved_nodes=tuple(),
+        quality=quality,
+        delta=0.0,
+      ))
     diff = _c_leiden._Optimiser_move_nodes(
             self._optimiser, partition._partition, is_membership_fixed, consider_comms)
+    if track_history:
+      membership, quality = self._snapshot_partition(partition)
+      history.append(OptimisationHistoryEntry(
+        iteration=1,
+        membership=membership,
+        moved_nodes=self._membership_changes(prev_membership, membership),
+        quality=quality,
+        delta=diff,
+      ))
     partition._update_internal_membership()
+    if track_history:
+      return diff, history
     return diff
 
-  def move_nodes_constrained(self, partition, constrained_partition, consider_comms=None):
+  def move_nodes_constrained(self, partition, constrained_partition, consider_comms=None, track_history=False):
     """ Move nodes to alternative communities for *refining* the partition.
 
     Parameters
@@ -483,10 +555,14 @@ class Optimiser(object):
       If ``None`` uses :attr:`refine_consider_comms`, but can be set
       to something else.
 
+    track_history : bool
+      If :obj:`True`, also record snapshots before and after the constrained move phase.
+
     Returns
     -------
-    float
-      Improvement in quality function.
+    float or (float, list[OptimisationHistoryEntry])
+      Improvement in quality function. When ``track_history`` is :obj:`True`,
+      a tuple containing the improvement and the recorded history is returned.
 
     Notes
     -----
@@ -513,11 +589,35 @@ class Optimiser(object):
     """
     if (consider_comms is None):
       consider_comms = self.refine_consider_comms
-    diff =  _c_leiden._Optimiser_move_nodes_constrained(self._optimiser, partition._partition, constrained_partition._partition, consider_comms)
+    history = [] if track_history else None
+    prev_membership = None
+    if track_history:
+      prev_membership, quality = self._snapshot_partition(partition)
+      history.append(OptimisationHistoryEntry(
+        iteration=0,
+        membership=prev_membership,
+        moved_nodes=tuple(),
+        quality=quality,
+        delta=0.0,
+      ))
+    diff =  _c_leiden._Optimiser_move_nodes_constrained(
+            self._optimiser, partition._partition, constrained_partition._partition,
+            consider_comms)
+    if track_history:
+      membership, quality = self._snapshot_partition(partition)
+      history.append(OptimisationHistoryEntry(
+        iteration=1,
+        membership=membership,
+        moved_nodes=self._membership_changes(prev_membership, membership),
+        quality=quality,
+        delta=diff,
+      ))
     partition._update_internal_membership()
+    if track_history:
+      return diff, history
     return diff
 
-  def merge_nodes(self, partition, is_membership_fixed=None, consider_comms=None):
+  def merge_nodes(self, partition, is_membership_fixed=None, consider_comms=None, track_history=False):
     """ Merge nodes for *optimising* the partition.
 
     Parameters
@@ -534,10 +634,14 @@ class Optimiser(object):
       If ``None`` uses :attr:`consider_comms`, but can be set to
       something else.
 
+    track_history : bool
+      If :obj:`True`, also record snapshots before and after the merge phase.
+
     Returns
     -------
-    float
-      Improvement in quality function.
+    float or (float, list[OptimisationHistoryEntry])
+      Improvement in quality function. When ``track_history`` is :obj:`True`,
+      a tuple containing the improvement and the recorded history is returned.
 
     Notes
     -----
@@ -562,12 +666,35 @@ class Optimiser(object):
     if (consider_comms is None):
       consider_comms = self.consider_comms
 
+    history = [] if track_history else None
+    prev_membership = None
+    if track_history:
+      prev_membership, quality = self._snapshot_partition(partition)
+      history.append(OptimisationHistoryEntry(
+        iteration=0,
+        membership=prev_membership,
+        moved_nodes=tuple(),
+        quality=quality,
+        delta=0.0,
+      ))
+
     diff = _c_leiden._Optimiser_merge_nodes(
             self._optimiser, partition._partition, is_membership_fixed, consider_comms)
+    if track_history:
+      membership, quality = self._snapshot_partition(partition)
+      history.append(OptimisationHistoryEntry(
+        iteration=1,
+        membership=membership,
+        moved_nodes=self._membership_changes(prev_membership, membership),
+        quality=quality,
+        delta=diff,
+      ))
     partition._update_internal_membership()
+    if track_history:
+      return diff, history
     return diff
 
-  def merge_nodes_constrained(self, partition, constrained_partition, consider_comms=None):
+  def merge_nodes_constrained(self, partition, constrained_partition, consider_comms=None, track_history=False):
     """ Merge nodes for *refining* the partition.
 
     Parameters
@@ -582,10 +709,14 @@ class Optimiser(object):
       If ``None`` uses :attr:`refine_consider_comms`, but can be set
       to something else.
 
+    track_history : bool
+      If :obj:`True`, also record snapshots before and after the constrained merge phase.
+
     Returns
     -------
-    float
-      Improvement in quality function.
+    float or (float, list[OptimisationHistoryEntry])
+      Improvement in quality function. When ``track_history`` is :obj:`True`,
+      a tuple containing the improvement and the recorded history is returned.
 
     Notes
     -----
@@ -612,8 +743,32 @@ class Optimiser(object):
     """
     if (consider_comms is None):
       consider_comms = self.refine_consider_comms
-    diff =  _c_leiden._Optimiser_merge_nodes_constrained(self._optimiser, partition._partition, constrained_partition._partition, consider_comms)
+    history = [] if track_history else None
+    prev_membership = None
+    if track_history:
+      prev_membership, quality = self._snapshot_partition(partition)
+      history.append(OptimisationHistoryEntry(
+        iteration=0,
+        membership=prev_membership,
+        moved_nodes=tuple(),
+        quality=quality,
+        delta=0.0,
+      ))
+    diff =  _c_leiden._Optimiser_merge_nodes_constrained(
+            self._optimiser, partition._partition, constrained_partition._partition,
+            consider_comms)
+    if track_history:
+      membership, quality = self._snapshot_partition(partition)
+      history.append(OptimisationHistoryEntry(
+        iteration=1,
+        membership=membership,
+        moved_nodes=self._membership_changes(prev_membership, membership),
+        quality=quality,
+        delta=diff,
+      ))
     partition._update_internal_membership()
+    if track_history:
+      return diff, history
     return diff
 
   def resolution_profile(self,
