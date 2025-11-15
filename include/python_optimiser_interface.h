@@ -35,6 +35,7 @@ extern "C"
   PyObject* _Optimiser_move_nodes_constrained(PyObject *self, PyObject *args, PyObject *keywds);
   PyObject* _Optimiser_merge_nodes(PyObject *self, PyObject *args, PyObject *keywds);
   PyObject* _Optimiser_merge_nodes_constrained(PyObject *self, PyObject *args, PyObject *keywds);
+  PyObject* _Optimiser_snapshot_partition(PyObject *self, PyObject *args, PyObject *keywds);
 
   PyObject* _Optimiser_set_consider_comms(PyObject *self, PyObject *args, PyObject *keywds);
   PyObject* _Optimiser_set_refine_consider_comms(PyObject *self, PyObject *args, PyObject *keywds);

@@ -60,6 +60,7 @@ extern "C"
       {"_Optimiser_move_nodes_constrained",         (PyCFunction)_Optimiser_move_nodes_constrained,         METH_VARARGS | METH_KEYWORDS, ""},
       {"_Optimiser_merge_nodes",                    (PyCFunction)_Optimiser_merge_nodes,                    METH_VARARGS | METH_KEYWORDS, ""},
       {"_Optimiser_merge_nodes_constrained",        (PyCFunction)_Optimiser_merge_nodes_constrained,        METH_VARARGS | METH_KEYWORDS, ""},
+      {"_Optimiser_snapshot_partition",             (PyCFunction)_Optimiser_snapshot_partition,             METH_VARARGS | METH_KEYWORDS, ""},
 
       {"_Optimiser_set_consider_comms",             (PyCFunction)_Optimiser_set_consider_comms,             METH_VARARGS | METH_KEYWORDS, ""},
       {"_Optimiser_set_refine_consider_comms",      (PyCFunction)_Optimiser_set_refine_consider_comms,      METH_VARARGS | METH_KEYWORDS, ""},
